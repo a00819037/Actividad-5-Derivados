@@ -1,0 +1,344 @@
+---
+title: "Waste Management, Inc. (NYSE: WM) — Avance del Proyecto Final"
+subtitle: "Derivados | Emisión de bono convertible con call spread (caso Molson Coors aplicado a WM)"
+author: "Equipo"
+date: "Datos LSEG Workspace al 21-oct-2026 · Reporte generado `r format(Sys.Date(), '%d/%m/%Y')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: flatly
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE,
+                      fig.width = 9, fig.height = 4.5)
+options(scipen = 999)
+# Solo usa R base + knitr (incluidos en Posit Cloud). No hay que instalar nada más.
+usd <- function(x, d = 0) paste0("$", formatC(x, format = "f", digits = d, big.mark = ","))
+pct <- function(x, d = 2) paste0(formatC(100 * x, format = "f", digits = d), "%")
+azul <- "#1F3864"; azul2 <- "#2E75B6"; gris <- "#7F7F7F"; rojo <- "#C00000"
+tabla <- function(df, cap = NULL) knitr::kable(df, caption = cap, align = "l", format.args = list(big.mark = ","))
+```
+
+<style>
+.kpi {display:inline-block; width:23%; margin:0.5%; padding:10px; background:#F2F6FC;
+      border-left:4px solid #1F3864; vertical-align:top;}
+.kpi b {font-size:1.4em; color:#1F3864;}
+.kpi span {font-size:0.85em; color:#595959;}
+</style>
+
+# 1. Situación problema y propuesta de estrategia
+
+**Caso base:** *Molson Coors Brewing Co.: Valuing a Convertible Bond* (Deutsche Bank, 2007). Molson
+emitió un convertible a 6 años (cupón 2.5%, prima 25%) y lo combinó con un **call spread**
+(compra de calls al 25% y venta de warrants al 60%) para elevar la prima efectiva; usó los
+recursos para **recomprar deuda cara** (bono 6.375% 2012).
+
+**Propuesta para WM (hipotética):**
+
+* Emitir **USD 750 mm** en bonos convertibles senior a **6 años** con prima de conversión de **25%**.
+* Usar los recursos para recomprar sus 3 bonos de cupón más alto: **7.00% 2028, 7.75% 2032 y 6.125% 2039** (USD 647 mm nominales).
+* Comprar un *note hedge* (calls al 25%) y vender *warrants* al 60% → **prima efectiva de 60%**.
+* Preguntas a resolver: ¿qué cupón deja el convertible a la par? ¿cuánto cuesta el call spread? ¿le conviene a WM?
+
+# 2. Overview de la empresa
+
+```{r overview-datos}
+precio  <- 229.58      # Official close 21-oct-2026 (Price Performance)
+mktcap  <- 91767       # USD mm (Overview - Capital Structure)
+acciones <- mktcap / precio
+```
+
+<div class="kpi"><span>Precio de cierre</span><br><b>`r usd(precio, 2)`</b><br><span>21-oct-2026</span></div>
+<div class="kpi"><span>Market cap</span><br><b>`r usd(mktcap/1000, 1)` bn</b><br><span>`r round(acciones,1)` mm acciones</span></div>
+<div class="kpi"><span>Enterprise value</span><br><b>$114.6 bn</b><br><span>EV/EBITDA LTM 14.6x</span></div>
+<div class="kpi"><span>Calificación</span><br><b>A- / A-</b><br><span>S&P / Fitch</span></div>
+
+**Descripción (LSEG):** Waste Management, Inc. es proveedor de soluciones ambientales en EE.UU. y
+Canadá: recolección, reciclaje y disposición de residuos. Segmentos: *East Tier, West Tier,
+Recycling Processing and Sales, WM Renewable Energy* y *WM Healthcare Solutions* (residuos
+regulados y destrucción segura de información). Sector TRBC: *Environmental Services & Equipment*.
+
+```{r desempeno}
+desempeno <- data.frame(
+  Periodo = c("1 semana", "1 mes", "3 meses", "6 meses", "9 meses", "1 año", "YTD"),
+  Rendimiento = c(6.4121, 10.8868, -2.8766, 2.5231, 1.3643, 6.8361, 4.4923) / 100
+)
+mercado <- data.frame(
+  Concepto = c("Máximo 52 semanas", "Mínimo 52 semanas", "Vol. histórica 10d", "Vol. histórica 30d",
+               "Vol. histórica 90d", "Vol. histórica 200d", "Beta 2 años", "Beta 5 años",
+               "Dividend yield bruto", "Precio / valor en libros", "Volumen promedio 30d"),
+  Valor = c("$248.10 (06-mar-2026)", "$194.15 (03-nov-2025)", "21.74%", "19.76%", "21.04%", "20.71%",
+            "-0.07", "0.41", "1.63%", "9.25x", "671,734")
+)
+par(mar = c(4, 7, 3, 1))
+barplot(rev(desempeno$Rendimiento) * 100, names.arg = rev(desempeno$Periodo), horiz = TRUE, las = 1,
+        col = ifelse(rev(desempeno$Rendimiento) >= 0, azul2, rojo), border = NA,
+        xlab = "%", main = "Rendimiento de la acción WM por periodo")
+abline(v = 0, col = gris)
+tabla(mercado, "Indicadores de mercado (LSEG: Price Performance)")
+```
+
+**Lectura:** WM es una acción defensiva (beta a 5 años de 0.41) con volatilidad histórica de
+~20-21%. Para la opción de conversión eso implica un valor moderado, y un cupón del convertible
+bajo pero no extremo.
+
+# 3. Análisis financiero y ratios
+
+```{r ratios}
+ratios <- data.frame(
+  Ratio = c("EV / Revenue", "EV / EBITDA", "EV / EBIT", "Deuda total / EV", "Deuda total / EBITDA",
+            "EBITDA / Intereses", "(EBITDA - Capex) / Intereses", "EBIT / Intereses", "P / U",
+            "Dividend yield (%)", "FOCF yield (%)", "Precio / Ventas", "Precio / Flujo"),
+  LTM_jun26 = c(4.46, 14.61, 23.72, 0.20, 2.98, 8.65, 5.09, 5.33, 32.50, 1.54, 3.89, 3.61, 14.23),
+  FY2024 = c(4.74, 16.28, 25.18, 0.23, 3.73, 10.73, 5.33, 6.94, 29.64, 1.52, 2.67, 3.69, 15.10),
+  FY2025 = c(4.41, 14.89, 24.14, 0.21, 3.07, 8.19, 4.65, 5.05, 32.79, 1.13, 3.18, 3.52, 14.70),
+  FY2026e = c(4.34, 13.97, 22.47, NA, 2.85, 8.89, 6.01, 5.53, 28.24, 1.63, 4.14, 3.47, 14.90),
+  FY2027e = c(4.12, 13.06, 20.53, NA, 2.66, 9.54, 6.43, 6.07, 25.31, 1.73, 4.53, 3.30, 13.79),
+  FY2028e = c(3.94, 12.32, 19.08, NA, 2.51, 10.60, 7.21, 6.84, 23.14, 1.82, 4.85, 3.15, 12.07)
+)
+tabla(ratios, "Key Ratios — históricos y consenso (media) LSEG")
+
+anios <- c("FY2024", "FY2025", "LTM", "FY2026e", "FY2027e", "FY2028e")
+apal  <- c(3.73, 3.07, 2.98, 2.85, 2.66, 2.51)
+cobert <- c(10.73, 8.19, 8.65, 8.89, 9.54, 10.60)
+par(mfrow = c(1, 2), mar = c(4, 4, 3, 1))
+plot(apal, type = "b", pch = 19, col = azul, xaxt = "n", ylim = c(2, 4), xlab = "",
+     ylab = "veces", main = "Deuda total / EBITDA"); axis(1, 1:6, anios, cex.axis = 0.75)
+plot(cobert, type = "b", pch = 19, col = azul2, xaxt = "n", ylim = c(6, 12), xlab = "",
+     ylab = "veces", main = "EBITDA / Intereses"); axis(1, 1:6, anios, cex.axis = 0.75)
+par(mfrow = c(1, 1))
+```
+
+**Lectura:** el apalancamiento subió en 2024 (adquisición de Stericycle → *WM Healthcare
+Solutions*) y el consenso espera desapalancamiento a 2.5x en 2028. La cobertura de intereses es
+holgada (8.7x), consistente con la calificación A-. Reducir el gasto por intereses con el
+convertible acelera ese desapalancamiento.
+
+# 4. Estructura de capital y deuda {.tabset .tabset-pills}
+
+## Estructura de capital
+
+```{r capital}
+capital <- data.frame(
+  Concepto = c("Market cap", "(-) Efectivo y equivalentes", "(+) Deuda total", "(+) Interés minoritario",
+               "= Enterprise value", "Capital contable", "Capital total (deuda + capital contable)",
+               "Deuda / Capital contable", "Deuda / Capital total"),
+  Valor = c("$91,767", "$557", "$23,356", "$1", "$114,567", "$9,925", "$33,282", "235.33%", "70.18%")
+)
+tabla(capital, "USD millones · financieros al 30-jun-2026 (LSEG Overview)")
+pie(c(91767, 23356), labels = c("Capital de mercado 79.7%", "Deuda 20.3%"),
+    col = c(azul2, azul), border = "white", main = "Composición del enterprise value")
+```
+
+## Perfil de deuda
+
+```{r deuda}
+estructura <- data.frame(
+  Instrumento = c("Bonos vigentes", "Préstamos (línea de crédito)", "Total", "Bonos inactivos (históricos)"),
+  Emisiones = c(40, 1, 41, 1272),
+  Monto_vigente_USD = c(17948298006, NA, 17948298006, NA),
+  Monto_emitido_USD = c(21191891006, 3500000000, 24691891006, 28775591576)
+)
+tabla(estructura, "Debt Structure (DS) — LSEG")
+
+moneda <- data.frame(Moneda = c("Dólar estadounidense", "Dólar canadiense"),
+                     Emisiones = c(39, 1), Vigente_USD_mm = c(17449.9, 498.4))
+moneda$Participacion <- pct(moneda$Vigente_USD_mm / sum(moneda$Vigente_USD_mm), 1)
+tabla(moneda, "Bonos por moneda")
+```
+
+La deuda es casi 100% en dólares (97.2%), de tasa fija y senior no garantizada: el riesgo
+cambiario es marginal (solo un bono en CAD) y el riesgo relevante es de **tasa de interés y
+refinanciamiento**.
+
+## Bonos de WM en el mercado
+
+```{r bonos}
+bonos <- data.frame(
+  Cupon = c(7.00, 3.88, 4.88, 2.00, 4.63, 4.65, 1.50, 4.95, 4.80, 4.15, 7.75, 4.63, 4.88, 3.90,
+            4.95, 6.13, 2.95, 4.10, 4.15, 2.50, 5.35),
+  Vencimiento = as.Date(c("2028-07-15", "2029-01-15", "2029-02-15", "2029-06-01", "2030-02-15",
+                          "2030-03-15", "2031-03-15", "2031-07-03", "2032-03-15", "2032-04-15",
+                          "2032-05-15", "2033-02-15", "2034-02-15", "2035-03-01", "2035-03-15",
+                          "2039-11-30", "2041-06-01", "2045-03-01", "2049-07-15", "2050-11-15",
+                          "2054-10-15")),
+  Precio_ask = c(102.833, 97.345, 99.433, 92.324, 98.040, 98.188, 85.162, 98.428, 97.176, 94.218,
+                 108.825, 95.615, 96.216, 87.847, 95.478, 102.300, 70.970, 78.956, 76.100, 55.807, 90.737),
+  YTM_ask = c(5.256, 5.149, 5.135, 5.187, 5.276, 5.238, 5.332, 5.331, 5.409, 5.383, 5.866, 5.454,
+              5.509, 5.751, 5.633, 5.870, 5.953, 6.007, 6.108, 5.991, 6.040),
+  Spread_bmk_pb = c(52.1, 40.2, 38.7, 35.5, 44.7, 41.0, 44.9, 44.9, 52.8, 50.2, 97.5, 49.4, 55.0,
+                    78.2, 57.6, 81.4, 89.4, 60.4, 70.2, 58.4, 68.9)
+)
+bonos$Plazo_anios <- round(as.numeric(bonos$Vencimiento - as.Date("2026-10-21")) / 365.25, 1)
+tabla(bonos, "Bonos constituyentes de la curva del emisor (Issuer Curve, cotización 21-oct-2026)")
+
+plot(bonos$Plazo_anios, bonos$YTM_ask, pch = 19, cex = bonos$Cupon / 3, col = azul2,
+     xlab = "Años al vencimiento", ylab = "YTM ask (%)",
+     main = "Bonos de WM: rendimiento vs. plazo (tamaño = cupón)")
+alto <- bonos$Cupon >= 6
+points(bonos$Plazo_anios[alto], bonos$YTM_ask[alto], pch = 1, cex = 3, col = rojo, lwd = 2)
+text(bonos$Plazo_anios[alto], bonos$YTM_ask[alto], paste0(bonos$Cupon[alto], "%"), pos = 4, col = rojo)
+```
+
+## Bonos a recomprar
+
+```{r recompra}
+recompra <- data.frame(
+  Bono = c("WM 7.00% 15-jul-2028", "WM 7.75% 15-may-2032", "WM 6.125% 30-nov-2039"),
+  ISIN = c("US902917AH67", "US94106LAN91", "US94106LAV18"),
+  Cupon = c(0.07, 0.0775, 0.06125),
+  Nominal_mm = c(257.907, 143.621, 245.686),
+  Precio_ask = c(102.8405, 108.8381, 102.2998),
+  Prima_tender = 1
+)
+recompra$Costo_tender_mm <- recompra$Nominal_mm * (recompra$Precio_ask + recompra$Prima_tender) / 100
+recompra$Cupon_anual_mm  <- recompra$Nominal_mm * recompra$Cupon
+tabla(recompra, "Candidatos a recompra (montos vigentes: páginas de cada bono en LSEG)")
+cat("Nominal total:", usd(sum(recompra$Nominal_mm), 1), "mm | Costo del tender:",
+    usd(sum(recompra$Costo_tender_mm), 1), "mm | Cupón anual que se elimina:",
+    usd(sum(recompra$Cupon_anual_mm), 1), "mm | Cupón promedio:",
+    pct(sum(recompra$Cupon_anual_mm) / sum(recompra$Nominal_mm)), "\n")
+```
+
+# 5. Calificación y riesgo de crédito {.tabset .tabset-pills}
+
+## Calificaciones
+
+```{r calificacion}
+calif <- data.frame(
+  Agencia = c("S&P (emisor, largo plazo)", "Fitch (emisor, largo plazo)", "Moody's",
+              "Calificación de emisión (bonos senior)"),
+  Calificacion = c("A-", "A-", "WR (retirada)", "BBB"),
+  Fecha = c("04-jun-2024", "13-ago-2026", "07-may-2018", "17-ago-2026 (EGJ)"),
+  Comentario = c("Grado de inversión", "Grado de inversión", "Sin calificación vigente",
+                 "Reportada en la pantalla de cada bono")
+)
+tabla(calif, "Calificaciones crediticias (LSEG: Bond Ratings / Issuer Ratings)")
+```
+
+Un emisor **A-** con cobertura de intereses de 8.7x tiene acceso amplio al mercado; por eso
+el convertible se valúa descontando el bono directo a la curva de WM (spread ~66 pb sobre
+Treasuries a 6 años) y no a una tasa high-yield.
+
+## Curva del emisor y probabilidad de incumplimiento
+
+```{r curva}
+curva <- data.frame(
+  Plazo = c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 20, 25, 30),
+  Yield = c(5.363, 5.292, 5.350, 5.454, 5.559, 5.649, 5.722, 5.783, 5.838, 5.886, 5.967, 6.060, 6.145, 6.170, 6.164),
+  Spread_bmk = c(88.3, 48.6, 46.1, 52.9, 60.9, 65.7, 69.3, 72.0, 74.5, 76.8, 76.8, 73.8, 67.9, 71.7, 75.5),
+  Z_spread = c(97.1, 74.9, 79.1, 91.0, 102.6, 111.9, 118.8, 124.1, 128.3, 131.5, 135.9, 140.3, 145.8, 150.8, 154.8),
+  Prob_default = c(0.864, 1.276, 2.086, 3.359, 4.893, 6.465, 8.109, 9.746, 11.332, 12.866, 15.817, 20.136, 27.367, 35.026, 42.755)
+)
+curva$Treasury <- curva$Yield - curva$Spread_bmk / 100
+tabla(curva, "Issuer Curve 0#WMUSDABMK= (yield %, spreads en pb, probabilidad de default acumulada %)")
+
+par(mfrow = c(1, 2), mar = c(4, 4, 3, 1))
+plot(curva$Plazo, curva$Yield, type = "b", pch = 19, col = azul, ylim = c(4.5, 6.4),
+     xlab = "Plazo (años)", ylab = "%", main = "Curva WM vs. Treasury implícito")
+lines(curva$Plazo, curva$Treasury, type = "b", pch = 17, col = gris)
+abline(v = 6, lty = 2, col = rojo)
+legend("bottomright", c("WM", "Treasury"), col = c(azul, gris), pch = c(19, 17), bty = "n")
+plot(curva$Plazo, curva$Prob_default, type = "b", pch = 19, col = rojo,
+     xlab = "Plazo (años)", ylab = "%", main = "Prob. de default acumulada")
+par(mfrow = c(1, 1))
+```
+
+A 6 años (plazo del convertible): rendimiento de **5.649%**, spread de **65.7 pb** y probabilidad
+de incumplimiento acumulada de **6.5%** implícita en precios de mercado.
+
+# 6. Tasas y volatilidad (insumos de la valuación) {.tabset .tabset-pills}
+
+## Tasas
+
+```{r tasas}
+ust5 <- 0.049182; ust7 <- 0.049954; rf <- (ust5 + ust7) / 2; y_wm <- 0.05649
+tabla(data.frame(
+  Insumo = c("Treasury 5 años (US5YT=RR)", "Treasury 7 años (US7YT=RR)",
+             "Tasa libre de riesgo 6 años (interpolada)", "Tasa de descuento: YTM WM 6 años"),
+  Valor = c(pct(ust5, 3), pct(ust7, 3), pct(rf, 3), pct(y_wm, 3))), "Tasas de mercado al 21-oct-2026")
+```
+
+## Volatilidad implícita
+
+```{r vol}
+iv <- data.frame(
+  Strike = c(170, 175, 180, 185, 190, 195, 200, 210, 220, 230, 240, 250, 260, 270, 280, 290, 300, 310, 320),
+  IV = c(28.1390, 27.8401, 27.3338, 26.8558, 26.5135, 26.5080, 26.4654, 25.0615, 25.3394, 24.4515,
+         24.1535, 23.7319, 23.3327, 23.3120, 22.5082, 22.7453, 22.4926, 22.3048, 22.4595),
+  Delta = c(0.8592, 0.8456, 0.8305, 0.8149, 0.7983, 0.7800, 0.7609, 0.7242, 0.6813, 0.6380, 0.5927,
+            0.5470, 0.5006, 0.4561, 0.4089, 0.3704, 0.3305, 0.2941, 0.2624)
+)
+plot(iv$Strike, iv$IV, type = "b", pch = 19, col = azul,
+     xlab = "Strike (USD)", ylab = "Volatilidad implícita (%)",
+     main = "Sonrisa de volatilidad — calls WM vencimiento 19-ene-2029 (LSEG OPW)")
+abline(v = c(precio, precio * 1.25), lty = 2, col = c(gris, rojo))
+abline(h = 21.04, lty = 3, col = azul2)
+legend("topright", c("Precio actual", "Precio de conversión (25%)", "Vol. histórica 90d"),
+       col = c(gris, rojo, azul2), lty = c(2, 2, 3), bty = "n")
+```
+
+El LEAPS más largo vence en ene-2029. Para la opción de conversión usamos la vol. implícita del
+strike 290 (≈ precio de conversión): **22.75%**. Para el warrant usamos la histórica de 90 días
+(**21.04%**), siguiendo al caso, que valúa el warrant con una volatilidad menor (21% vs. 23%).
+
+# 7. Valuación preliminar del convertible
+
+```{r valuacion}
+bs_call <- function(S, K, r, s, T, q = 0) {
+  d1 <- (log(S / K) + (r - q + s^2 / 2) * T) / (s * sqrt(T)); d2 <- d1 - s * sqrt(T)
+  c(precio = S * exp(-q * T) * pnorm(d1) - K * exp(-r * T) * pnorm(d2), delta = exp(-q * T) * pnorm(d1))
+}
+valor_bono <- function(cup, y = y_wm, F = 1000, T = 6, m = 2) {
+  t <- 1:(T * m); cf <- rep(F * cup / m, T * m); cf[T * m] <- cf[T * m] + F
+  sum(cf / (1 + y / m)^t)
+}
+monto <- 750; Tm <- 6; s_c <- 0.227453; s_w <- 0.2104
+K  <- precio * 1.25; n <- 1000 / K; Kw <- precio * 1.60
+call   <- bs_call(precio, K, rf, s_c, Tm)
+opcion <- call["precio"] * n
+cupon  <- uniroot(function(c) valor_bono(c) - (1000 - opcion), c(0, 0.1), tol = 1e-12)$root
+acc_mm <- monto / K
+hedge  <- call["precio"] * acc_mm
+warr   <- bs_call(precio, Kw, rf, s_w, Tm)["precio"] * acc_mm
+
+res <- data.frame(
+  Concepto = c("Precio de conversión (prima 25%)", "Acciones por bono", "Call por acción (Black-Scholes)",
+               "Delta", "Opción de conversión por bono", "Bono directo por bono",
+               "Cupón que deja el convertible a la par", "Ahorro vs. bono directo WM (pb)",
+               "Costo note hedge (USD mm)", "Ingreso warrants al 60% (USD mm)",
+               "Costo neto call spread (USD mm)", "Costo neto / principal"),
+  Valor = c(usd(K, 2), round(n, 4), usd(call["precio"], 2), round(call["delta"], 2),
+            usd(opcion, 2), usd(1000 - opcion, 2), pct(cupon, 3), round((y_wm - cupon) * 1e4),
+            usd(hedge, 1), usd(warr, 1), usd(warr - hedge, 1), pct((warr - hedge) / monto, 1))
+)
+tabla(res, "Resultados preliminares (Exhibits 2-4 del caso, aplicados a WM)")
+```
+
+```{r comparacion, fig.height=4}
+comp <- rbind(Molson = c(191.5, 1.93, 8.6), WM = c(opcion, cupon * 100, -(warr - hedge) / monto * 100))
+colnames(comp) <- c("Opción por bono (USD)", "Cupón a la par (%)", "Call spread (% principal)")
+par(mfrow = c(1, 3), mar = c(3, 3, 3, 1))
+for (j in 1:3) barplot(comp[, j], col = c(gris, azul), border = NA, main = colnames(comp)[j])
+par(mfrow = c(1, 1))
+```
+
+**Lectura preliminar:** los resultados de WM son muy parecidos a los del caso (cupón ~1.7% vs.
+1.93%; call spread 8.7% vs. 8.6%). Con el convertible WM se financia ~396 pb por debajo de su
+deuda directa y elimina cupones de 6.83% promedio: un ahorro de ~USD 32 mm anuales antes de
+impuestos.
+
+# 8. Próximos pasos
+
+* Árbol binomial (CRR) para la opción de conversión y convergencia a Black-Scholes.
+* Valuación del convertible completo en el árbol (conversión anticipada, efecto del dividendo de 1.6%).
+* Comparación con pares (Republic Services, Waste Connections) en spreads y múltiplos.
+* Sensibilidades: cupón vs. prima de conversión y vs. volatilidad; recomendación final al CEO.
+
+---
+<small>Fuentes: LSEG Workspace (Refinitiv) — Overview, Price Performance, Key Ratios, Debt Structure,
+Issuer Curve, Bond Ratings, Options (OPW), US5YT=RR, US7YT=RR; caso "Molson Coors Brewing Co.:
+Valuing a Convertible Bond" (Tec de Monterrey, NE90-06-107). Datos al cierre del 21-oct-2026.</small>
